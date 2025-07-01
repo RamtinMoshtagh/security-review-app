@@ -12,11 +12,16 @@
     "expo": "~53.0.15",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
-    "react-native": "0.79.4"
+    "react-native": "0.79.4",
+    "react-native-maps": "^1.24.3",
+    "react-native-paper": "^5.14.5",
+    "react-native-vector-icons": "^10.2.0",
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/react": "~19.0.10",
+    "@types/react-native-maps": "^0.24.1",
     "typescript": "~5.8.3"
   },
   "private": true
