@@ -1,20 +1,21 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { Provider as PaperProvider } from 'react-native-paper';
 
+
+import RootNavigator from './navigation/RootNavigator';
+import { customTheme, customNavigationTheme } from './theme/index';
+
+/**
+ * Entry point – wraps React Navigation and React Native Paper providers.
+ * All navigation logic lives in src/navigation/RootNavigator.tsx.
+ */
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <PaperProvider theme={customTheme}>
+      <NavigationContainer theme={customNavigationTheme}>
+        <RootNavigator />
+      </NavigationContainer>
+    </PaperProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
