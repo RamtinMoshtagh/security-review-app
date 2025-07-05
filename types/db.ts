@@ -11,8 +11,6 @@ export type Database = {
     Tables: {
       reviews: {
         Row: {
-          vote_sum: number
-          created_at: string | number | Date
           behavior_type: string | null
           id: string
           rating: string | null
@@ -22,6 +20,7 @@ export type Database = {
           timestamp: string | null
           tone: string | null
           venue: string | null
+          vote_sum: number
         }
         Insert: {
           behavior_type?: string | null
@@ -33,6 +32,7 @@ export type Database = {
           timestamp?: string | null
           tone?: string | null
           venue?: string | null
+          vote_sum?: number
         }
         Update: {
           behavior_type?: string | null
@@ -44,6 +44,25 @@ export type Database = {
           timestamp?: string | null
           tone?: string | null
           venue?: string | null
+          vote_sum?: number
+        }
+        Relationships: []
+      }
+      venue_tag_votes: {
+        Row: {
+          count: number
+          tag: string
+          venue: string
+        }
+        Insert: {
+          count?: number
+          tag: string
+          venue: string
+        }
+        Update: {
+          count?: number
+          tag?: string
+          venue?: string
         }
         Relationships: []
       }
@@ -73,10 +92,34 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      venue_tag_stats: {
+        Row: {
+          count: number | null
+          tag: string | null
+          venue: string | null
+        }
+        Insert: {
+          count?: number | null
+          tag?: string | null
+          venue?: string | null
+        }
+        Update: {
+          count?: number | null
+          tag?: string | null
+          venue?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      vote_review: {
+        Args: { p_review: string; p_delta: number }
+        Returns: number
+      }
+      vote_tag: {
+        Args: { p_venue: string; p_tag: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

@@ -1,171 +1,260 @@
+// screens/InsightsScreen/index.tsx
 import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
+  View,
   StyleSheet,
   Platform,
   StatusBar,
-  View,
+  TouchableOpacity,
+  FlatList,
 } from 'react-native';
-import { Text, ActivityIndicator, useTheme } from 'react-native-paper';
+import {
+  Text,
+  ActivityIndicator,
+  useTheme,
+  Card,
+  Divider,
+  Chip,
+  IconButton,
+  Switch,
+} from 'react-native-paper';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 
 import { getInsights, getTopVenuesByRating } from '../../lib/supabase';
 import VenueRankList, { RankedVenue } from '../../components/VenueRankList';
+import StackedBar from '../../components/StackedBar';
 import { RootTabParamList } from '../../navigation/types';
 
-interface Stats {
-  mostReviewedVenue: string;
-  mostFlaggedTag: string;
-  avgTone: string;
-  totalReviews: number;
-  bestVenues: RankedVenue[];
-  worstVenues: RankedVenue[];
-}
+interface Stats { avgTone: string; totalReviews: number; }
+interface FeedItem { tag: string; venue: string; minutesAgo: number; }
 
-const initialStats: Stats = {
-  mostReviewedVenue: 'Loading…',
-  mostFlaggedTag: 'Loading…',
-  avgTone: 'Loading…',
-  totalReviews: 0,
-  bestVenues: [],
-  worstVenues: [],
-};
-
-/**
- * Community insights screen.
- * Ranking lists first, high-level metrics after.
- */
-const InsightsScreen: React.FC = () => {
+export default function InsightsScreen() {
   const theme = useTheme();
-  const navigation = useNavigation<NavigationProp<RootTabParamList>>();
-  const [stats, setStats] = useState<Stats>(initialStats);
+  const nav = useNavigation<NavigationProp<RootTabParamList>>();
+
+  const [stats, setStats] = useState<Stats>({ avgTone: '…', totalReviews: 0 });
+  const [best, setBest] = useState<RankedVenue[]>([]);
+  const [worst, setWorst] = useState<RankedVenue[]>([]);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notify, setNotify] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<string>('');
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try {
-        const insightPromise = getInsights();
-        const bestPromise = getTopVenuesByRating('Good');
-        const worstPromise = getTopVenuesByRating('Bad');
-
-        const [
-          { mostReviewedVenue, mostFlaggedTag, avgTone, totalReviews },
-          bestVenues,
-          worstVenues,
-        ] = await Promise.all([insightPromise, bestPromise, worstPromise]);
-
-        setStats({
-          mostReviewedVenue,
-          mostFlaggedTag,
-          avgTone,
-          totalReviews,
-          bestVenues,
-          worstVenues,
-        });
-      } catch (err) {
-        console.error('Error fetching insights', err);
-      } finally {
-        setLoading(false);
-      }
+      const [ins, top, bot] = await Promise.all([
+        getInsights(),
+        getTopVenuesByRating('Good', 10),
+        getTopVenuesByRating('Bad', 10),
+      ]);
+      setStats(ins);
+      setBest(top);
+      setWorst(bot);
+      setFeed([
+        { tag: 'Friendly', venue: top[0]?.venue ?? '—', minutesAgo: 5 },
+        { tag: 'Aggressive', venue: bot[0]?.venue ?? '—', minutesAgo: 12 },
+        { tag: 'Calm', venue: top[1]?.venue ?? '—', minutesAgo: 20 },
+      ]);
+      setUpdatedAt(new Date().toLocaleTimeString());
+      setLoading(false);
     })();
   }, []);
 
-  const handleSelectVenue = (venue: string) => {
-    navigation.navigate('ReviewStack', {
-      screen: 'ReviewFlow',
-      params: { prefillVenue: venue },
-    } as any);
-  };
+  const goToReview = () =>
+    nav.navigate('ReviewStack', { screen: 'ReviewFlow' } as any);
+  const showHotSpots = () =>
+    nav.navigate('ReviewStack', { screen: 'VenueList', params: { filter: 'good' } } as any);
+  const showAvoid = () =>
+    nav.navigate('ReviewStack', { screen: 'VenueList', params: { filter: 'bad' } } as any);
+  const handleSelect = (venue: string) =>
+    nav.navigate('ReviewStack', { screen: 'VenueDetail', params: { venue } } as any);
 
-  // ────────────────────────────────────────────────────────── Render
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={[styles.title, { color: theme.colors.onSurface }]}>Community Insights</Text>
+        {/* Header & timestamp */}
+        <View style={styles.headerRow}>
+          <Text style={[styles.header, { color: theme.colors.onSurface }]}>
+            Your Security Snapshot
+          </Text>
+          <IconButton
+            icon="refresh"
+            size={20}
+            onPress={() => {
+              setUpdatedAt(new Date().toLocaleTimeString());
+              setLoading(true);
+              getInsights().then(ins => {
+                setStats(ins);
+                setLoading(false);
+              });
+            }}
+          />
+        </View>
+        <Text style={[styles.updated, { color: theme.colors.outline }]}>
+          Last updated: {updatedAt}
+        </Text>
+        <Divider style={styles.divider} />
 
-        {loading ? (
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        ) : (
-          <>
-            {/* 1️⃣ Ranking lists first */}
-            <VenueRankList
-              title="🏆 Top-Rated Venues"
-              data={stats.bestVenues}
-              variant="best"
-              onSelect={handleSelectVenue}
-            />
+        {/* Mood Spotlight */}
+        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.cardTitle, { color: theme.colors.outline }]}>
+            👮‍♂️ Security Vibes Tonight
+          </Text>
+          <Text style={[styles.cardValue, { color: theme.colors.onSurface }]}>
+            '{stats.avgTone}'
+          </Text>
+          <Text style={[styles.smallText, { color: theme.colors.onSurface }]}>
+            “1 in 2 tagged bouncers as 🔥. Arrive early to skip the drama.”
+          </Text>
+        </Card>
 
-            <VenueRankList
-              title="🚩 Most Complaints"
-              data={stats.worstVenues}
-              variant="worst"
-              onSelect={handleSelectVenue}
-            />
+        {/* Pulse Meter */}
+        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.cardTitle, { color: theme.colors.outline }]}>
+            Live Pulse Meter
+          </Text>
+          <View style={styles.pulseBg}>
+            <View style={[styles.pulseFill, { width: `${Math.min((stats.totalReviews/10)*100,100)}%` }]} />
+          </View>
+          <Text style={[styles.smallText, { color: theme.colors.onSurface }]}>
+            {stats.totalReviews} total tags
+          </Text>
+        </Card>
 
-            {/* 2️⃣ High-level stats */}
-            <InsightCard label="📍 Most Reviewed Venue" value={stats.mostReviewedVenue} />
-            <InsightCard label="⚠️ Most Flagged Issue" value={stats.mostFlaggedTag} />
-            <InsightCard label="💬 Average Tone" value={stats.avgTone} />
-            <InsightCard label="📝 Total Reviews Logged" value={stats.totalReviews.toString()} />
+        {/* Word Cloud */}
+<Card style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+  <Text style={[styles.cardTitle, { color: theme.colors.outline }]}>
+    Trending Tags
+  </Text>
+  <View style={styles.wordCloud}>
+    {['Respectful','Calm','Aggressive','Racial profiling','Friendly'].map(
+      (tag) => (
+        <Chip
+          key={tag}
+          mode="outlined"
+          style={[
+            styles.cloudChip,
+            { borderColor: theme.colors.primary, paddingVertical: 10 },
+          ]}
+          textStyle={{
+            color: theme.colors.primary,
+            fontWeight: '600',
+            fontSize: 14,
+          }}
+        >
+          {tag}
+        </Chip>
+      )
+    )}
+  </View>
+</Card>
 
-            <Text style={styles.footer}>Live from the NightCheck community 🚨</Text>
-          </>
-        )}
+        {/* Mini-Feed (vertical) */}
+        <View style={styles.feedContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
+            What Your Friends Are Saying
+          </Text>
+          <FlatList
+            data={feed}
+            keyExtractor={(_, i) => i.toString()}
+            renderItem={({ item }) => (
+              <View style={[styles.feedItem, { backgroundColor: theme.colors.surface }]}>
+                <Text style={{ color: theme.colors.primary }}>Someone</Text>
+                <Text style={{ color: theme.colors.onSurface }}>
+                  tagged '{item.tag}' at {item.venue} {item.minutesAgo}m ago
+                </Text>
+              </View>
+            )}
+            scrollEnabled={false}
+          />
+        </View>
+
+        {/* Venue Rankings */}
+        <VenueRankList
+          title="🏆 Top-Rated Venues"
+          data={best}
+          variant="best"
+          onSelect={handleSelect}
+        />
+        <VenueRankList
+          title="🚩 Most Complaints"
+          data={worst}
+          variant="worst"
+          onSelect={handleSelect}
+        />
+
+        {/* Share & Notifications */}
+        <TouchableOpacity style={[styles.cta, { backgroundColor: theme.colors.primary }]}>
+          <Text style={[styles.ctaText, { color: theme.colors.onPrimary }]}>
+            Share this Snapshot
+          </Text>
+        </TouchableOpacity>
+        <View style={styles.notifyRow}>
+          <Text style={{ color: theme.colors.onSurface }}>🔔 Notify me on drops</Text>
+          <Switch value={notify} onValueChange={setNotify} />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
-};
-
-export default InsightsScreen;
-
-// ────────────────────────────────────────────────────────── Helper component
-function InsightCard({ label, value }: { label: string; value: string }) {
-  const theme = useTheme();
-  return (
-    <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-      <Text style={[styles.cardLabel, { color: theme.colors.outline }]}>{label}</Text>
-      <Text style={[styles.cardValue, { color: theme.colors.onSurface }]}>{value}</Text>
-    </View>
-  );
 }
 
-// ────────────────────────────────────────────────────────── Styles
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : StatusBar.currentHeight,
   },
   container: {
-    paddingHorizontal: 24,
+    padding: 16,
     paddingBottom: 40,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginVertical: 24,
+  header: { fontSize: 24, fontWeight: '700' },
+  updated: { marginTop: 4, marginBottom: 12, fontSize: 12 },
+  divider: { marginVertical: 8 },
+  card: { borderRadius: 16, padding: 12, marginBottom: 16 },
+  cardTitle: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
+  cardValue: { fontSize: 20, fontWeight: '700' },
+  smallText: { fontSize: 12, marginTop: 4 },
+  pulseBg: {
+    height: 8,
+    backgroundColor: '#eee',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginVertical: 8,
   },
-  card: {
-    width: '100%',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    elevation: 3,
+  pulseFill: { height: '100%', backgroundColor: '#4caf50' },
+  wordCloud: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginVertical: 8,
   },
-  cardLabel: {
-    fontSize: 14,
-    marginBottom: 6,
-  },
-  cardValue: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  footer: {
-    marginTop: 32,
-    color: '#AAAAAA',
-    fontSize: 13,
-    textAlign: 'center',
+  cloudChip: { margin: 4 },
+  feedContainer: { marginBottom: 16 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
+  feedItem: { padding: 8, borderRadius: 12, marginBottom: 8 },
+  cta: { borderRadius: 24, paddingVertical: 12, alignItems: 'center', marginTop: 24 },
+  ctaText: { fontSize: 16, fontWeight: '600' },
+  notifyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 16,
   },
 });

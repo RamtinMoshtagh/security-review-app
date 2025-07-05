@@ -78,13 +78,26 @@ export async function getInsights() {
 /**
  * Use the Postgres function `vote_review(p_review uuid, p_delta int)` created in the DB.
  * Returns the new vote_sum.
- * NOTE: The RPC isn’t typed in the generated `Database` file, so cast the client to `any`
- * to silence TS until you update your generated types.
+ * NOTE: The RPC isn’t typed in the generated `Database` file, so cast the client to `any`.
  */
 export async function voteReview(reviewId: string, delta: 1 | -1) {
   const { data, error } = await (supabase as any).rpc('vote_review', {
     p_review: reviewId,
     p_delta : delta,
+  });
+
+  if (error) throw error;
+  return (data as number) ?? 0;
+}
+
+/**
+ * Record a single tag vote for a venue via Postgres function `vote_tag(p_venue text, p_tag text)`.
+ * Returns the updated count for that tag.
+ */
+export async function voteTag(venue: string, tag: string) {
+  const { data, error } = await (supabase as any).rpc('vote_tag', {
+    p_venue: venue,
+    p_tag  : tag,
   });
 
   if (error) throw error;

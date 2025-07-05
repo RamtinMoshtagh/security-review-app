@@ -1,3 +1,4 @@
+// screens/LandingScreen/index.tsx
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -7,7 +8,13 @@ import {
   StyleSheet,
   LayoutAnimation,
 } from 'react-native';
-import { Text, Button, useTheme, ActivityIndicator } from 'react-native-paper';
+import {
+  Text,
+  Button,
+  useTheme,
+  ActivityIndicator,
+  Switch,
+} from 'react-native-paper';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 
@@ -27,16 +34,18 @@ const initialInsights: Insights = {
 };
 
 /**
- * Landing / Home screen – welcomes user and shows small community stats.
+ * Landing / Home screen – welcomes user and shows small community stats,
+ * plus a notification toggle.
  */
 const LandingScreen: React.FC = () => {
-  const theme  = useTheme();
+  const theme = useTheme();
   const navigation = useNavigation<NavigationProp<RootTabParamList>>();
 
   const [insights, setInsights] = useState<Insights>(initialInsights);
-  const [loading,  setLoading ] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [notify, setNotify] = useState(false);
 
-  // ────────────────────────────────────────────────────────── Fetch quick stats
+  // Fetch quick stats
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -51,22 +60,29 @@ const LandingScreen: React.FC = () => {
     })();
   }, []);
 
-  // ────────────────────────────────────────────────────────── CTA handlers
-  const handleStartReview = () => {
+  // CTA handlers
+  const onStartReview = () => {
     LayoutAnimation.easeInEaseOut();
     Haptics.selectionAsync();
     navigation.navigate('ReviewStack', { screen: 'ReviewFlow' });
   };
 
-  const handleReadReviews = () => {
+  const onViewInsights = () => {
+    LayoutAnimation.easeInEaseOut();
+    Haptics.selectionAsync();
+    navigation.navigate('Insights');
+  };
+
+  const onReadReviews = () => {
     LayoutAnimation.easeInEaseOut();
     Haptics.selectionAsync();
     navigation.navigate('ReviewStack', { screen: 'VenueList' });
   };
 
-  // ────────────────────────────────────────────────────────── UI
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.colors.background }]}
+    >
       <View style={styles.container}>
         {/* Hero copy + CTAs */}
         <View style={styles.hero}>
@@ -74,25 +90,54 @@ const LandingScreen: React.FC = () => {
             Welcome to NightCheck
           </Text>
           <Text style={[styles.subtitle, { color: theme.colors.outline }]}>
-            Share your experience with nightclub security and help others stay safe. Your voice helps shift the culture.
+            Share your experience with nightclub security and help others stay safe.
+            Your voice helps shift the culture.
           </Text>
 
           <Button
             mode="contained"
-            onPress={handleStartReview}
+            onPress={onStartReview}
             style={[styles.button, { backgroundColor: theme.colors.primary }]}
             contentStyle={{ paddingVertical: 10 }}
-            labelStyle={{ color: theme.colors.onPrimary, fontWeight: '600', fontSize: 16 }}
+            labelStyle={{
+              color: theme.colors.onPrimary,
+              fontWeight: '600',
+              fontSize: 16,
+            }}
           >
             Start Review →
           </Button>
 
           <Button
             mode="outlined"
-            onPress={handleReadReviews}
-            style={[styles.button, { marginTop: 12, borderColor: theme.colors.primary }]}
+            onPress={onViewInsights}
+            style={[
+              styles.button,
+              { marginTop: 12, borderColor: theme.colors.primary },
+            ]}
             contentStyle={{ paddingVertical: 10 }}
-            labelStyle={{ color: theme.colors.primary, fontWeight: '600', fontSize: 16 }}
+            labelStyle={{
+              color: theme.colors.primary,
+              fontWeight: '600',
+              fontSize: 16,
+            }}
+          >
+            View Insights
+          </Button>
+
+          <Button
+            mode="outlined"
+            onPress={onReadReviews}
+            style={[
+              styles.button,
+              { marginTop: 12, borderColor: theme.colors.primary },
+            ]}
+            contentStyle={{ paddingVertical: 10 }}
+            labelStyle={{
+              color: theme.colors.primary,
+              fontWeight: '600',
+              fontSize: 16,
+            }}
           >
             Read Reviews
           </Button>
@@ -108,11 +153,29 @@ const LandingScreen: React.FC = () => {
             <ActivityIndicator color={theme.colors.primary} />
           ) : (
             <>
-              <StatRow label="📍 Most reviewed venue" value={insights.mostReviewedVenue} />
-              <StatRow label="⚠️ Most flagged issue" value={insights.mostFlaggedTag} />
-              <StatRow label="💬 Avg. tone"            value={insights.avgTone} />
+              <StatRow
+                label="📍 Most reviewed venue"
+                value={insights.mostReviewedVenue}
+              />
+              <StatRow
+                label="⚠️ Most flagged issue"
+                value={insights.mostFlaggedTag}
+              />
+              <StatRow label="💬 Avg. tone" value={insights.avgTone} />
             </>
           )}
+
+          {/* Notification toggle */}
+          <View style={styles.notifyRow}>
+            <Text style={{ color: theme.colors.onSurface }}>
+              🔔 Notify me on security dips
+            </Text>
+            <Switch
+              value={notify}
+              onValueChange={setNotify}
+              color={theme.colors.primary}
+            />
+          </View>
         </View>
       </View>
     </SafeAreaView>
@@ -121,20 +184,21 @@ const LandingScreen: React.FC = () => {
 
 export default LandingScreen;
 
-// ────────────────────────────────────────────────────────── Helper
+// Helper component
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
     <Text style={styles.stat}>
-      {label}: <Text style={styles.statHighlight}>{value}</Text>
+      {label}:{' '}
+      <Text style={styles.statHighlight}>{value}</Text>
     </Text>
   );
 }
 
-// ────────────────────────────────────────────────────────── Styles
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
+    paddingTop:
+      Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
   },
   container: {
     flex: 1,
@@ -182,5 +246,13 @@ const styles = StyleSheet.create({
   statHighlight: {
     color: '#FF8870',
     fontWeight: '600',
+  },
+  notifyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 24,
+    width: '100%',
+    paddingHorizontal: 16,
   },
 });

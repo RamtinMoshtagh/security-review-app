@@ -1,17 +1,19 @@
-import React, { useEffect, useState, useCallback } from 'react';
+// screens/VenueDetailScreen/index.tsx
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
+  ScrollView,
   View,
-  FlatList,
   StyleSheet,
-  RefreshControl,
+  Pressable,
 } from 'react-native';
 import {
   Text,
   useTheme,
   ActivityIndicator,
-  Button,
-  Chip,
+  Card,
+  Divider,
+  IconButton,
 } from 'react-native-paper';
 import {
   useRoute,
@@ -20,144 +22,118 @@ import {
   NavigationProp,
 } from '@react-navigation/native';
 
-import { supabase, voteReview } from '../../lib/supabase';
-import { Database } from '../../types/db';
+import { supabase, voteTag } from '../../lib/supabase';
 import { ReviewStackParamList, RootTabParamList } from '../../navigation/types';
 
-/* ──────────────────────────────── Types */
-type ReviewRow = Pick<
-  Database['public']['Tables']['reviews']['Row'],
-  'id' | 'rating' | 'tags' | 'story' | 'created_at' | 'vote_sum'
->;
+export type TagCount = { tag: string; count: number };
+export type TagOption = { label: string; emoji: string };
+export type CommentRow = {
+  id: string;
+  comment: string;
+  created_at: string;
+};
 
 type RouteT = RouteProp<ReviewStackParamList, 'VenueDetail'>;
 
-interface Metrics {
-  good: number;
-  okay: number;
-  bad: number;
-  topTag: string;
-  tone: string;
-}
+export const TAG_OPTIONS: TagOption[] = [
+  { emoji: '✅', label: 'Respectful' },
+  { emoji: '🛡️', label: 'Protected me' },
+  { emoji: '🙂', label: 'Friendly' },
+  { emoji: '🧘', label: 'Calm' },
+  { emoji: '😡', label: 'Aggressive' },
+  { emoji: '🧍🏾', label: 'Racial profiling' },
+  { emoji: '❌', label: 'Sexist / inappropriate' },
+  { emoji: '🥴', label: 'Drunk' },
+  { emoji: '🔈', label: 'Yelled / Power tripping' },
+  { emoji: '🚷', label: 'Prevented entry for no reason' },
+];
 
-/* ──────────────────────────────── Constants */
-const PAGE_SIZE = 15;
+const SAMPLE_COMMENTS: CommentRow[] = [
+  {
+    id: '1',
+    comment: 'Bouncers were super friendly and helped us skip the line!',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: '2',
+    comment: 'Felt a bit tense at the door, but overall decent security.',
+    created_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+  },
+  {
+    id: '3',
+    comment: 'Guard was overly aggressive for no reason.',
+    created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+  },
+];
 
-/* ──────────────────────────────── Component */
 const VenueDetailScreen: React.FC = () => {
-  const theme       = useTheme();
-  const navigation  = useNavigation<NavigationProp<RootTabParamList>>();
-  const { params }  = useRoute<RouteT>();
-  const { venue }   = params;
+  const theme      = useTheme();
+  const navigation = useNavigation<NavigationProp<RootTabParamList>>();
+  const { params } = useRoute<RouteT>();
+  const { venue }  = params;
 
-  const [metrics,  setMetrics]  = useState<Metrics | null>(null);
-  const [reviews,  setReviews]  = useState<ReviewRow[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [cursor,   setCursor]   = useState(0);
+  const [loadingTags,    setLoadingTags]    = useState(true);
+  const [tagCounts,      setTagCounts]      = useState<TagCount[]>([]);
+  const [totalVotes,     setTotalVotes]     = useState(0);
+  const [votedTags,      setVotedTags]      = useState<Set<string>>(new Set());
 
-  /* ──────────────────────────────── Data fetchers */
-  const fetchMetrics = async () => {
-    const { data } = await supabase
-      .from('reviews')
-      .select('rating,tags,tone')
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [comments,        setComments]        = useState<CommentRow[]>(SAMPLE_COMMENTS);
+
+  // Fetch tag stats
+  const loadTagStats = async () => {
+    setLoadingTags(true);
+    const { data, error } = await supabase
+      .from('venue_tag_stats')
+      .select('tag,count')
       .eq('venue', venue);
 
-    if (!data) return;
-
-    const tally = { good: 0, okay: 0, bad: 0 };
-    const tags  : Record<string, number> = {};
-    const tones : Record<string, number> = {};
-
-    data.forEach((r) => {
-      if (r.rating === 'Good') tally.good += 1;
-      if (r.rating === 'Okay') tally.okay += 1;
-      if (r.rating === 'Bad')  tally.bad  += 1;
-
-      (r.tags ?? []).forEach((t) => (tags[t]  = (tags[t]  || 0) + 1));
-      if (r.tone) tones[r.tone] = (tones[r.tone] || 0) + 1;
-    });
-
-    const topTag  = Object.entries(tags ).sort((a,b)=>b[1]-a[1])[0]?.[0] ?? '—';
-    const topTone = Object.entries(tones).sort((a,b)=>b[1]-a[1])[0]?.[0] ?? '—';
-
-    setMetrics({ ...tally, topTag, tone: topTone });
-  };
-
-  const fetchPage = async (offset = 0) => {
-    const { data } = await supabase
-      .from('reviews')
-      .select('id,rating,tags,story,created_at,vote_sum')
-      .eq('venue', venue)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-
-    if (!data) return;
-    offset === 0 ? setReviews(data as ReviewRow[]) : setReviews((p) => [...p, ...data]);
-  };
-
-  /* ──────────────────────────────── Lifecycle */
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await Promise.all([fetchMetrics(), fetchPage(0)]);
-      setLoading(false);
-    })();
-  }, [venue]);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    setCursor(0);
-    await Promise.all([fetchMetrics(), fetchPage(0)]);
-    setRefreshing(false);
-  }, [venue]);
-
-  const loadMore = async () => {
-    const next = cursor + PAGE_SIZE;
-    await fetchPage(next);
-    setCursor(next);
-  };
-
-  /* ──────────────────────────────── Voting */
-  const handleVote = async (id: string, delta: 1 | -1) => {
-    try {
-      const newSum = await voteReview(id, delta);
-      setReviews((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, vote_sum: newSum } : r)),
-      );
-    } catch (err) {
-      console.error('Vote failed', err);
+    if (!error && Array.isArray(data)) {
+      setTagCounts(data as TagCount[]);
+      setTotalVotes((data as TagCount[]).reduce((sum, t) => sum + t.count, 0));
     }
+    setLoadingTags(false);
   };
 
-  /* ──────────────────────────────── Render helpers */
-  const ReviewCard = ({ item }: { item: ReviewRow }) => (
-    <View style={[styles.reviewCard, { backgroundColor: theme.colors.surfaceVariant }]}>
-      <Text style={styles.reviewHeader}>
-        {item.rating === 'Good' ? '🟢' : item.rating === 'Okay' ? '🟡' : '🔴'} •{' '}
-        {new Date(item.created_at).toLocaleDateString()}
-      </Text>
+  // Fetch comments (overwrite samples once loaded)
+  const loadComments = async () => {
+    setLoadingComments(true);
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('id, comment, created_at')
+      .eq('venue', venue)
+      .not('comment', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(20);
 
-      <View style={styles.tagRow}>
-        {(item.tags ?? []).map((t) => (
-          <Chip key={t} style={styles.tag}>{t}</Chip>
-        ))}
-      </View>
+    if (!error && Array.isArray(data) && data.length) {
+      setComments(
+        (data as unknown as CommentRow[]).map(c => ({
+          ...c,
+          comment: c.comment.trim().slice(0, 200),
+        }))
+      );
+    }
+    setLoadingComments(false);
+  };
 
-      <Text numberOfLines={3} style={{ color: theme.colors.onSurface, marginBottom: 12 }}>
-        {item.story}
-      </Text>
+  useEffect(() => {
+    loadTagStats();
+    loadComments();
+  }, [venue]);
 
-      <View style={styles.voteRow}>
-        <Button icon="thumb-up-outline" compact onPress={() => handleVote(item.id, +1)} children={undefined} />
-        <Text style={styles.voteSum}>{item.vote_sum ?? 0}</Text>
-        <Button icon="thumb-down-outline" compact onPress={() => handleVote(item.id, -1)} children={undefined} />
-      </View>
-    </View>
-  );
+  // Handle tag vote
+  const handleTagVote = async (tag: string) => {
+    if (votedTags.has(tag)) return;
+    setTagCounts(prev =>
+      prev.map(t => (t.tag === tag ? { ...t, count: t.count + 1 } : t))
+    );
+    setTotalVotes(prev => prev + 1);
+    setVotedTags(prev => new Set(prev).add(tag));
+    try { await voteTag(venue, tag) } catch (e) { console.error(e) }
+  };
 
-  /* ──────────────────────────────── Render */
-  if (loading) {
+  if (loadingTags) {
     return (
       <SafeAreaView style={[styles.center, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -166,79 +142,108 @@ const VenueDetailScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
-        <Text style={styles.venueName}>{venue}</Text>
-        {metrics && (
-          <>
-            <View style={styles.metricsRow}>
-              <Text style={styles.metric}>🟢 {metrics.good}</Text>
-              <Text style={styles.metric}>🟡 {metrics.okay}</Text>
-              <Text style={styles.metric}>🔴 {metrics.bad}</Text>
-            </View>
-            <Text style={styles.subMetric}>🚩 {metrics.topTag} • 💬 {metrics.tone}</Text>
-          </>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Text style={[styles.title, { color: theme.colors.onBackground }]}>
+          How’s security at{"\n"}{venue}?
+        </Text>
+
+        {/* Tag grid */}
+        <View style={styles.grid}>
+          {TAG_OPTIONS.map(opt => {
+            const count    = tagCounts.find(t => t.tag === opt.label)?.count ?? 0;
+            const pct      = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+            const selected = votedTags.has(opt.label);
+            return (
+              <Pressable
+                key={opt.label}
+                style={[
+                  styles.card,
+                  { backgroundColor: selected
+                      ? theme.colors.primary
+                      : theme.colors.surface
+                  }
+                ]}
+                onPress={() => handleTagVote(opt.label)}
+                disabled={selected}
+              >
+                <Text style={styles.emoji}>{opt.emoji}</Text>
+                <Text style={[styles.label, { color: theme.colors.onSurface }]}>
+                  {opt.label}
+                </Text>
+                <View style={styles.barBg}>
+                  <View style={[styles.barFill, {
+                    width: `${pct}%`,
+                    backgroundColor: theme.colors.primary,
+                  }]} />
+                </View>
+                <Text style={styles.count}>{count} ({pct}%)</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.note, { color: theme.colors.outline }]}>
+          You can select one tag per visit—thank you!
+        </Text>
+
+        <Divider style={styles.divider} />
+
+        {/* Comments */}
+        <View style={styles.commentsHeader}>
+          <Text style={[styles.commentsTitle, { color: theme.colors.onSurface }]}>
+            Recent Comments
+          </Text>
+          <IconButton icon="refresh" size={20} onPress={loadComments} />
+        </View>
+
+        {loadingComments ? (
+          <ActivityIndicator color={theme.colors.primary} />
+        ) : (
+          comments.map(c => (
+            <Card
+              key={c.id}
+              style={[styles.commentCard, { backgroundColor: theme.colors.surface }]}
+            >
+              <Card.Content>
+                <Text style={{ color: theme.colors.onSurface }}>
+                  {c.comment}
+                </Text>
+                <Text style={styles.commentDate}>
+                  {new Date(c.created_at).toLocaleDateString()}
+                </Text>
+              </Card.Content>
+            </Card>
+          ))
         )}
-      </View>
 
-      {/* List */}
-      <FlatList
-        data={reviews}
-        keyExtractor={(r) => r.id}
-        renderItem={ReviewCard}
-        contentContainerStyle={{ padding: 16 }}
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.4}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
-        }
-        ListFooterComponent={
-          reviews.length >= PAGE_SIZE ? <ActivityIndicator color={theme.colors.primary} /> : null
-        }
-      />
-
-      {/* CTA */}
-      <Button
-        mode="contained"
-        style={styles.cta}
-        onPress={() =>
-          navigation.navigate('ReviewStack', {
-            screen: 'ReviewFlow',
-            params: { prefillVenue: venue },
-          } as any)
-        }
-      >
-        Add your review
-      </Button>
+        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={{ color: theme.colors.primary }}>← Back to list</Text>
+        </Pressable>
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
 export default VenueDetailScreen;
 
-/* ──────────────────────────────── Styles */
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  center:   { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
-  header: {
-    padding: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ffffff22',
-  },
-  venueName:  { fontSize: 24, fontWeight: '700' },
-  metricsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  metric:     { fontSize: 16 },
-  subMetric:  { marginTop: 4, color: '#CCCCCC' },
-
-  reviewCard:  { borderRadius: 16, padding: 16, marginBottom: 16, elevation: 3 },
-  reviewHeader:{ fontWeight: '600', marginBottom: 4 },
-  tagRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 8 },
-  tag:         { height: 24 },
-
-  voteRow:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  voteSum:   { minWidth: 28, textAlign: 'center', fontWeight: '600' },
-
-  cta: { position: 'absolute', bottom: 32, alignSelf: 'center', width: '70%', borderRadius: 24 },
+  safe:        { flex: 1 },
+  scroll:      { padding: 16, paddingBottom: 32 },
+  center:      { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  title:       { fontSize: 22, fontWeight: '600', textAlign: 'center', marginBottom: 16 },
+  grid:        { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  card:        { width: '48%', marginBottom: 12, padding: 12, borderRadius: 12, alignItems: 'center' },
+  emoji:       { fontSize: 28, marginBottom: 4 },
+  label:       { fontSize: 14, textAlign: 'center', marginBottom: 8 },
+  barBg:       { width: '100%', height: 6, backgroundColor: '#eee', borderRadius: 3, overflow: 'hidden', marginBottom: 4 },
+  barFill:     { height: 6 },
+  count:       { fontSize: 12, textAlign: 'center' },
+  note:        { textAlign: 'center', marginVertical: 12 },
+  divider:     { marginVertical: 16 },
+  commentsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  commentsTitle:  { fontSize: 18, fontWeight: '600' },
+  commentCard:    { marginBottom: 8 },
+  commentDate:    { fontSize: 10, color: '#888', marginTop: 4 },
+  backBtn:        { marginTop: 16, alignSelf: 'center' },
 });
