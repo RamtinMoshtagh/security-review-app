@@ -50,18 +50,21 @@ export type Database = {
       }
       venue_tag_votes: {
         Row: {
-          count: number
+          score: number | null
           tag: string
+          user_id: string
           venue: string
         }
         Insert: {
-          count?: number
+          score?: number | null
           tag: string
+          user_id: string
           venue: string
         }
         Update: {
-          count?: number
+          score?: number | null
           tag?: string
+          user_id?: string
           venue?: string
         }
         Relationships: []
@@ -94,19 +97,9 @@ export type Database = {
     Views: {
       venue_tag_stats: {
         Row: {
-          count: number | null
+          net_score: number | null
           tag: string | null
-          venue: string | null
-        }
-        Insert: {
-          count?: number | null
-          tag?: string | null
-          venue?: string | null
-        }
-        Update: {
-          count?: number | null
-          tag?: string | null
-          venue?: string | null
+          total_votes: number | null
         }
         Relationships: []
       }
@@ -117,7 +110,7 @@ export type Database = {
         Returns: number
       }
       vote_tag: {
-        Args: { p_venue: string; p_tag: string }
+        Args: { p_venue: string; p_tag: string; p_delta?: number }
         Returns: number
       }
     }

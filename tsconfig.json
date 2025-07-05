@@ -4,5 +4,5 @@
     "strict": true,
     "typeRoots": ["./types", "./node_modules/@types"]
   },
-  "include": ["app", "components", "types"]
+  "include": ["app", "components", "types", "types/**/*.ts" ]
 }
